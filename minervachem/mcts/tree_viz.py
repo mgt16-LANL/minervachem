@@ -31,7 +31,7 @@ def make_tree_nodes(node, size:int):
 
     for j in range(size):
         level = [p for p in paths if len(p) == j+1]
-        print("Levels", level)
+        # print("Levels", level)
         for partial_mol in level:
             if len(partial_mol) > 1:
                 second_last, last = partial_mol[-2:]
