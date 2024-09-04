@@ -285,28 +285,50 @@ def backup(node, reward):
     return
 
 
-def tree_search(root_node, sa_target=0, logp_target=2.3406, thresh=2, history=[]):
-    if root_node.state.sa_score is None:
-        loss = 100
-    elif root_node.state.logp is None:
-        loss = 100
-    else:
-        loss = (
-            abs(root_node.state.sa_score - sa_target)
-            + abs(root_node.state.logp - logp_target)
-        ) / 2
-    if loss < thresh:
-        history.append(root_node)
-    if len(root_node.children) == 0:
-        return history
-    for child in root_node.children:
-        tmp = tree_search(
-            child,
-            sa_target=sa_target,
-            logp_target=logp_target,
-            thresh=thresh,
-            history=history,
-        )
-        history = tmp
-    return history
+def top_percent_search(root_node, top_percent=0.05):
+    """Search for and save the top n% of non-best/non-fully expanded children
+
+    Args:
+        root_node (_type_): root node
+        top_percent (float, optional): desired percentage cutoff. Defaults to 0.05.
+    """
+    def collect_all_nodes(node, all_nodes):
+        reward = node.reward / node.visits
+        # print(reward)
+        all_nodes.append((reward, node))
+        for child in node.children:
+            collect_all_nodes(child, all_nodes)
+        return all_nodes
+
+    all_nodes = collect_all_nodes(root_node, [])
+    all_nodes.sort(reverse=True, key=lambda x: x[0])
+    top_count = max(1, int(top_percent * len(all_nodes)))
+    top_nodes = [node for _, node in all_nodes[:top_count]]
+
+    return top_nodes
+
+# def tree_search(root_node, sa_target=0, logp_target=2.3406, thresh=2, history=[]):
+#     if root_node.state.sa_score is None:
+#         loss = 100
+#     elif root_node.state.logp is None:
+#         loss = 100
+#     else:
+#         loss = (
+#             abs(root_node.state.sa_score - sa_target)
+#             + abs(root_node.state.logp - logp_target)
+#         ) / 2
+#     if loss < thresh:
+#         history.append(root_node)
+#     if len(root_node.children) == 0:
+#         return history
+#     for child in root_node.children:
+#         tmp = tree_search(
+#             child,
+#             sa_target=sa_target,
+#             logp_target=logp_target,
+#             thresh=thresh,
+#             history=history,
+#         )
+#         history = tmp
+#     return history
 
