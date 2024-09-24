@@ -6,14 +6,14 @@ import sys
 sys.path.append(os.path.join(os.environ["CONDA_PREFIX"], "share", "RDKit", "Contrib"))
 # from SA_Score import sascorer
 from rdkit import Chem
-from minervachem.fingerprinters import GraphletFingerprinter
-from minervachem.transformers import FingerprintFeaturizer
+# from minervachem.fingerprinters import GraphletFingerprinter
+# from minervachem.transformers import FingerprintFeaturizer
 import pickle
-from scipy.sparse import csr_matrix
+# from scipy.sparse import csr_matrix
 # from minervachem.regressors import HierarchicalResidualModel
 
-with open(os.path.join(os.path.dirname(__file__),'ridge_model.pkl'), 'rb') as f:
-    model = pickle.load(f)
+with open(os.path.join(os.path.dirname(__file__),'ridge_pipeline.pkl'), 'rb') as f:
+    pipeline = pickle.load(f)
 
 class State:
     """State class"""
@@ -51,7 +51,7 @@ class State:
         self.allchoices = allchoices
         self.max_value1 = max_value1
         # self.max_value2 = max_value2
-        self.featurizer = GraphletFingerprinter()
+        self.pipeline = pipeline
     #     self.featurizer = FingerprintFeaturizer(
     #         fingerprinter=GraphletFingerprinter(max_len=5),
     #         verbose=0,         # Optional verbosity parameter
@@ -59,7 +59,7 @@ class State:
     #         n_jobs=-3,         # For joblib, this means all n_cores-2. 
     #         chunk_size='auto', # Optional, how many molecules each core should do in a batch.
     # )
-        self.model = model
+        # self.model = model
         # self.sa_score = None
         self.mae = None
         self.e_at = None
@@ -93,38 +93,6 @@ class State:
         self.num_moves -= 1
         return next_turn
 
-    def dict_to_csr(data_dict, shape=None):
-        """
-        Convert a dictionary with (row, col): value format to a csr_matrix.
-
-        Args:
-            data_dict (dict): Dictionary with keys as (row, col) tuples and values as the matrix entries.
-            shape (tuple, optional): Desired shape of the output matrix. If not provided, it will be inferred from the dictionary.
-
-        Returns:
-            scipy.sparse.csr_matrix: The resulting sparse matrix.
-        """
-        # Extract row indices, column indices, and values from the dictionary
-        row_indices = []
-        col_indices = []
-        values = []
-
-        for (row, col), value in data_dict.items():
-            row_indices.append(row)
-            col_indices.append(col)
-            values.append(value)
-
-        # Infer shape if not provided
-        if shape is None:
-            num_rows = max(row_indices) + 1
-            num_cols = max(col_indices) + 1
-            shape = (num_rows, num_cols)
-
-        # Create the csr_matrix
-        sparse_matrix = csr_matrix((values, (row_indices, col_indices)), shape=shape)
-
-        return sparse_matrix
-
     def terminal(self):
         """Function to check if the State is terminal. If the turn counter has counted down 0, then the state has reached termination.
 
@@ -153,18 +121,10 @@ class State:
             # logp = np.nan
             # sa_score = np.nan
         else:
-            fingerprint, _ = self.featurizer(mol)
-            print(fingerprint)
-            fingerprint2 = self.dict_to_csr(fingerprint)
-            self.e_at = self.model.predict(fingerprint2)
+            self.e_at = self.pipeline.predict([mol])
             self.mae = abs(self.e_at - self.goal)
             reward = np.max(
-                (1.0 - (self.mae / self.max_value1)) * 3, 0
-            )  # force no negative reward values
-            # reward2 = np.max(
-            #     1.0 - (self.mae_sa_score / self.max_value2), 0
-            # )  # force no negative reward values
-            # reward = np.mean([reward1, reward2])
+                (1.0 - (self.mae / self.max_value1)) * 3, 0)
         return reward  # , logp, sa_score
 
     def __hash__(self):

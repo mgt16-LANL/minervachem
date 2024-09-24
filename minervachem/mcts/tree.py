@@ -3,8 +3,8 @@ import random
 import math
 import logging
 import numpy as np
-# from state import *
-from minerva_state import *
+from state import *
+# from minerva_state import *
 
 # MCTS scalar.  Larger scalar will increase exploitation, smaller will increase exploration.
 # SCALAR=1/(2*math.sqrt(2.0))
