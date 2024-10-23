@@ -4,7 +4,7 @@ import hashlib
 import os
 import sys
 sys.path.append(os.path.join(os.environ["CONDA_PREFIX"], "share", "RDKit", "Contrib"))
-# from SA_Score import sascorer
+from SA_Score import sascorer
 from rdkit import Chem
 # from minervachem.fingerprinters import GraphletFingerprinter
 # from minervachem.transformers import FingerprintFeaturizer
@@ -22,10 +22,10 @@ class State:
         self,
         # size=8,
         goal=-2000,
-        # sa_target=0,
+        sa_target=0,
         allchoices=["C", "O", "=", "N", "c", "1", "S", "P", "F", "2", "\n"],
         max_value1=-1000,
-        # max_value2=2500,
+        max_value2=5,
         moves=None,
         turn=8,
 
@@ -46,24 +46,16 @@ class State:
         self.moves = moves if moves is not None else []
         self.smiles = "".join(self.moves)
         self.goal = goal
-        # self.sa_target = sa_target
+        self.sa_target = sa_target
         self.choices = allchoices.copy()
         self.allchoices = allchoices
         self.max_value1 = max_value1
-        # self.max_value2 = max_value2
+        self.max_value2 = max_value2
         self.pipeline = pipeline
-    #     self.featurizer = FingerprintFeaturizer(
-    #         fingerprinter=GraphletFingerprinter(max_len=5),
-    #         verbose=0,         # Optional verbosity parameter
-    #         # Parallel Arguments
-    #         n_jobs=-3,         # For joblib, this means all n_cores-2. 
-    #         chunk_size='auto', # Optional, how many molecules each core should do in a batch.
-    # )
-        # self.model = model
-        # self.sa_score = None
         self.mae = None
         self.e_at = None
-        # self.mae_logp = None
+        self.sa_score = None
+        self.mae_sa_score = None
 
         if len(self.moves) > 0 and self.moves[-1] == '\n':
             self.choices = []
@@ -84,10 +76,10 @@ class State:
             moves=self.moves + [nextmove],
             turn=self.turn - 1,
             goal=self.goal,
-            # sa_target=self.sa_target,
+            sa_target=self.sa_target,
             allchoices=self.allchoices,
             max_value1=self.max_value1,
-            # max_value2=self.max_value2,
+            max_value2=self.max_value2,
         )
         self.choices.remove(nextmove)
         self.num_moves -= 1
@@ -119,12 +111,23 @@ class State:
         if mol is None:
             reward = 0
             # logp = np.nan
-            # sa_score = np.nan
+            sa_score = np.nan
         else:
-            self.e_at = self.pipeline.predict([mol])
+            self.e_at = self.pipeline.predict([mol])[0]
             self.mae = abs(self.e_at - self.goal)
-            reward = np.max(
-                (1.0 - (self.mae / self.max_value1)) * 3, 0)
+
+            self.sa_score = sascorer.calculateScore(mol)
+            self.mae_sa_score = abs(self.sa_score - self.sa_target)
+            # reward = np.max(
+            #     (1.0 - (self.mae / self.max_value1)) * 3, 0)
+            
+            reward1 = np.max(
+                (1.0 - (self.mae / self.max_value1)) * 3, 0
+            )  # force no negative reward values
+            reward2 = np.max(
+                1.0 - (self.mae_sa_score / self.max_value2), 0
+            )  # force no negative reward values
+            reward = np.mean([reward1, reward2])
         return reward  # , logp, sa_score
 
     def __hash__(self):
@@ -144,14 +147,13 @@ class State:
             else:
                 e_at, mae = self.e_at, self.mae
 
-            # if self.logp is None:
-            #     sa_score = mae_sa_score = np.nan
-            # else:
-            #     sa_score, mae_sa_score = self.sa_score, self.mae_sa_score
-
+            if self.e_at is None:
+                sa_score = mae_sa_score = np.nan
+            else:
+                sa_score, mae_sa_score = self.sa_score, self.mae_sa_score
             s = (
-                f"E_at: {e_at:.4f};" +
-                f"MAE: {mae:.4f}; state: "
+                f"E_at: {e_at:.4f}; SA score: {sa_score:.4f};" +
+                f"E_at MAE: {mae:.4f}; SA MAE: {mae_sa_score:.4f}; state: "
                 + self.smiles.replace("\n", ".")
                 + "; "
                 + f"Moves: {self.moves}"

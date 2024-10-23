@@ -118,7 +118,7 @@ class State:
                 1.0 - (self.mae_sa_score / self.max_value2), 0
             )  # force no negative reward values
             reward = np.mean([reward1, reward2])
-        return reward  # , logp, sa_score
+        return reward
 
     def __hash__(self):
         return int(hashlib.md5(str(self.moves).encode("utf-8")).hexdigest(), 16)

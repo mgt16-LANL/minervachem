@@ -274,12 +274,15 @@ class FingerprintFeaturizer(BaseEstimator, TransformerMixin):
                      * List of bit maps (map bit IDs to to lists of atoms) 
                      * List of bit IDs
         """
+
+        # progress_bar = tqdm if self.verbose else lambda x: x
+
         if self.chunk_size == 'even':
             batch_size = misc.evenly_distribute_jobs(len(mols), self.n_jobs)
         else: 
             batch_size = self.chunk_size
         p = Parallel(n_jobs=self.n_jobs, 
-                     verbose=self.verbose,
+                     verbose=self.verbose if self.verbose else 0,
                      prefer='processes',
                      batch_size=batch_size,
                      return_as='generator',
@@ -289,7 +292,7 @@ class FingerprintFeaturizer(BaseEstimator, TransformerMixin):
         fps = tqdm(p(f(mol,
                   self.fingerprinter,
                  )
-                for mol in mols), desc="Constructing Fingerprints", total=len(mols))
+                for mol in mols), desc="Constructing Fingerprints", total=len(mols), disable=not self.verbose)
         (fps, 
          bis, 
          bits,
@@ -318,7 +321,8 @@ class FingerprintFeaturizer(BaseEstimator, TransformerMixin):
         M = sp.sparse.dok_matrix((len(fps), len(used_bits)), dtype=int)
         for i, fp in tqdm(enumerate(fps), 
                           'Converting FPs to sparse', 
-                          total=len(fps)): 
+                          total=len(fps),
+                          disable=not self.verbose): 
             for bit, count in fp.items(): 
                 if bit in used_bits.keys():
                     j = used_bits[bit]
