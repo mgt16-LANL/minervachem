@@ -26,7 +26,7 @@ y_train, y_test = [sub_df['E_at'] for sub_df in [train, test]]
 
 pipeline = Pipeline(
     [
-        ("featurizer", FingerprintFeaturizer(fingerprinter=GraphletFingerprinter(max_len=3),
+        ("featurizer", FingerprintFeaturizer(fingerprinter=GraphletFingerprinter(max_len=3, useHs=True),
                                              verbose=0,
                                              n_jobs=-3,
                                              chunk_size='auto',)

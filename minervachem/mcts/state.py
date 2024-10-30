@@ -67,6 +67,22 @@ class State:
         self.num_moves -= 1
         return next_turn
 
+    def reward(self):
+        """This is function the child class needs to define to calculate the reward of specific state.
+
+        Returns:
+            _type_: _description_
+        """
+        return NotImplemented
+    
+    def next_state(self):
+        """This is function the child class needs to define to calculate the next state.
+
+        Returns:
+            _type_: _description_
+        """
+        return NotImplemented
+
     def terminal(self):
         """Function to check if the State is terminal. If the turn counter has counted down 0, then the state has reached termination.
 
@@ -143,11 +159,13 @@ class LogP(State):
         Returns:
                 State class: state of the next turn
         """
+        cls = type(self)
+
         try:
             nextmove = random.choice(self.choices)
         except:
             print("FAILED", self.choices)
-        next_turn = LogP(
+        next_turn = cls(
             moves=self.moves + [nextmove],
             turn=self.turn - 1,
             goal=self.goal,
@@ -214,6 +232,11 @@ class LogP(State):
         return s
 
 class BondEnergy(State):
+    """State that optimizes for an atomization energy and synthesizability target
+
+    Args:
+        State (_type_): parent State class
+    """
     def __init__(
         self,
         goal=-2000,
@@ -277,7 +300,6 @@ class BondEnergy(State):
         mol = Chem.MolFromSmiles(new_compound)
         if mol is None:
             reward = 0
-            # logp = np.nan
             sa_score = np.nan
         else:
             self.e_at = self.pipeline.predict([mol])[0]
@@ -285,9 +307,7 @@ class BondEnergy(State):
 
             self.sa_score = sascorer.calculateScore(mol)
             self.mae_sa_score = abs(self.sa_score - self.sa_target)
-            # reward = np.max(
-            #     (1.0 - (self.mae / self.max_value1)) * 3, 0)
-            
+
             reward1 = np.max(
                 (1.0 - (self.mae / self.max_value1)) * 3, 0
             )  # force no negative reward values
