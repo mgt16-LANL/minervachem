@@ -7,32 +7,29 @@ import sys
 sys.path.append(os.path.join(os.environ["CONDA_PREFIX"], "share", "RDKit", "Contrib"))
 from SA_Score import sascorer
 from rdkit import Chem
+import pickle
 
+with open(os.path.join(os.path.dirname(__file__),'ridge_pipeline.pkl'), 'rb') as f:
+    pipeline = pickle.load(f)
 
 
 class State:
-    """State class"""
+    """Parent State class for MCTS"""
 
     def __init__(
         self,
-        # size=8,
         goal=2.3406,
-        sa_target=0,
         allchoices=["C", "O", "=", "N", "c", "1", "S", "P", "F", "2", "\n"],
         max_value1=20,
-        max_value2=5,
         moves=None,
         turn=8,
     ):
-        """Class: state of the Node class. Contains information about the
+        """Class: base state of the Node class. Contains information about the search parameters for MCTS
 
         Args:
-                size (int, optional): maximum size of the molecule aka number of atoms in molecule. Defaults to 8.
-                goal (float, optional): target value for logP; MCTS must build a molecule that is as close to this target as possible. Defaults to 2.3406.
-                sa_target (int, optional): target value for RDKit synthesizability score (SA score); MCTS must build a molecule that is as close to this target as possible. Defaults to 0.
+                goal (float, optional): target value for desired chemical property; MCTS must build a molecule that is as close to this target as possible. Defaults to 2.3406.
                 choices (list, optional): list of SMILES symbols that are options to choose for the next move. Defaults to ['C', 'O', '=', 'N', 'c', '1', 'S', 'P', 'F', '2'].
                 max_value1 (int, optional): max value of logP; for normalization of reward calculation. Defaults to 20.
-                max_value2 (int, optional): max value of SA score; for normalization of reward calculation. Defaults to 5.
                 moves (_type_, optional): list of SMILES symbols that have been selected. Defaults to None.
                 turn (int, optional): counter that tracks the turn number, should be equal to size aka every turn corresponds to choosing the next SMILES symbol. Defaults to 8.
         """
@@ -40,15 +37,9 @@ class State:
         self.moves = moves if moves is not None else []
         self.smiles = "".join(self.moves)
         self.goal = goal
-        self.sa_target = sa_target
         self.choices = allchoices.copy()
         self.allchoices = allchoices
         self.max_value1 = max_value1
-        self.max_value2 = max_value2
-        self.sa_score = None
-        self.mae_sa_score = None
-        self.logp = None
-        self.mae_logp = None
 
         if len(self.moves) > 0 and self.moves[-1] == '\n':
             self.choices = []
@@ -68,12 +59,9 @@ class State:
         next_turn = State(
             moves=self.moves + [nextmove],
             turn=self.turn - 1,
-            # size=self.size,
             goal=self.goal,
-            sa_target=self.sa_target,
             allchoices=self.allchoices,
             max_value1=self.max_value1,
-            max_value2=self.max_value2,
         )
         self.choices.remove(nextmove)
         self.num_moves -= 1
@@ -91,6 +79,86 @@ class State:
             return True
         
         return False
+
+    def __hash__(self):
+        return int(hashlib.md5(str(self.moves).encode("utf-8")).hexdigest(), 16)
+
+    def __eq__(self, other):
+        if hash(self) == hash(other):
+            return True
+        return False
+
+    def __str__(self):
+        s = f"Moves: {self.moves}"
+        return s
+
+
+class LogP(State):
+    """State that optimizes for a solubility and synthesizability target for MCTS
+
+    Args:
+        State (_type_): parent State class
+    """
+    def __init__(
+            self,
+            goal=2.3406,
+            allchoices=["C", "O", "=", "N", "c", "1", "S", "P", "F", "2", "\n"],
+            max_value1=20,
+            moves=None,
+            turn=8,
+            sa_target=0,
+            max_value2=5,
+    ):
+        """_summary_
+
+        Args:
+            goal (float, optional): inherited, target value for logP. Defaults to 2.3406.
+            allchoices (list, optional): inherited. Defaults to ["C", "O", "=", "N", "c", "1", "S", "P", "F", "2", "\n"].
+            max_value1 (int, optional): inherited. Defaults to 20.
+            moves (_type_, optional): inherited. Defaults to None.
+            turn (int, optional): inherited. Defaults to 8.
+            sa_target (int, optional): target value for RDKit synthesizability score (SA score); MCTS must build a molecule that is as close to this target as possible. Defaults to 0.
+            max_value2 (int, optional): max value of SA score; for normalization of reward calculation. Defaults to 5.
+        """
+
+        super().__init__(
+            goal=goal,
+            allchoices=allchoices,
+            max_value1=max_value1,
+            moves=moves,
+            turn=turn,
+        )
+
+        self.sa_score = None
+        self.mae_sa_score = None
+        self.logp = None
+        self.mae_logp = None
+        self.sa_target = sa_target
+        self.max_value2 = max_value2
+
+    def next_state(self):
+        """Function to get the next state: For the next move, randomly select a SMILES symbole among the available choices.
+        Then, create a new state where this move is added to self.moves and update the turn counter (reduce by one).
+
+        Returns:
+                State class: state of the next turn
+        """
+        try:
+            nextmove = random.choice(self.choices)
+        except:
+            print("FAILED", self.choices)
+        next_turn = LogP(
+            moves=self.moves + [nextmove],
+            turn=self.turn - 1,
+            goal=self.goal,
+            sa_target=self.sa_target,
+            allchoices=self.allchoices,
+            max_value1=self.max_value1,
+            max_value2=self.max_value2,
+        )
+        self.choices.remove(nextmove)
+        self.num_moves -= 1
+        return next_turn
 
     def reward(self):
         """Function to check for SMILES string validity and calculate the corresponding reward.
@@ -120,14 +188,6 @@ class State:
             reward = np.mean([reward1, reward2])
         return reward
 
-    def __hash__(self):
-        return int(hashlib.md5(str(self.moves).encode("utf-8")).hexdigest(), 16)
-
-    def __eq__(self, other):
-        if hash(self) == hash(other):
-            return True
-        return False
-
     def __repr__(self):
         if self.moves:
             if self.logp is None:
@@ -153,8 +213,110 @@ class State:
             s = "empty state"
         return s
 
-    def __str__(self):
-        # s=f"Value: {self.value}; Moves: {self.moves}"
-        s = f"Moves: {self.moves}"
-        # logger.info(s)
+class BondEnergy(State):
+    def __init__(
+        self,
+        goal=-2000,
+        sa_target=0,
+        allchoices=["C", "O", "=", "N", "c", "1", "S", "P", "F", "2", "\n"],
+        max_value1=-1000,
+        max_value2=5,
+        moves=None,
+        turn=8,
+    ):
+        super().__init__(
+            goal=goal,
+            allchoices=allchoices,
+            max_value1=max_value1,
+            moves=moves,
+            turn=turn,
+        )
+
+        self.pipeline = pipeline
+        self.mae = None
+        self.e_at = None
+        self.sa_score = None
+        self.mae_sa_score = None
+        self.sa_target = sa_target
+        self.max_value2 = max_value2
+
+    
+    def next_state(self):
+        """Function to get the next state: For the next move, randomly select a SMILES symbole among the available choices.
+        Then, create a new state where this move is added to self.moves and update the turn counter (reduce by one).
+
+        Returns:
+                State class: state of the next turn
+        """
+        try:
+            nextmove = random.choice(self.choices)
+        except:
+            print("FAILED", self.choices)
+        next_turn = BondEnergy(
+            moves=self.moves + [nextmove],
+            turn=self.turn - 1,
+            goal=self.goal,
+            sa_target=self.sa_target,
+            allchoices=self.allchoices,
+            max_value1=self.max_value1,
+            max_value2=self.max_value2,
+        )
+        self.choices.remove(nextmove)
+        self.num_moves -= 1
+        return next_turn
+
+    def reward(self):
+        """Function to check for SMILES string validity and calculate the corresponding reward.
+        If the molecule is valid, then logP and SA score are calculated. A reward for each is calculated by getting the distance from the corresponding target value.
+        The final reward is taken as an average of the rewards. One reward can be weighted more than the other.
+
+        Returns:
+                float: calculated reward value
+        """
+        new_compound = "".join(self.moves)
+        mol = Chem.MolFromSmiles(new_compound)
+        if mol is None:
+            reward = 0
+            # logp = np.nan
+            sa_score = np.nan
+        else:
+            self.e_at = self.pipeline.predict([mol])[0]
+            self.mae = abs(self.e_at - self.goal)
+
+            self.sa_score = sascorer.calculateScore(mol)
+            self.mae_sa_score = abs(self.sa_score - self.sa_target)
+            # reward = np.max(
+            #     (1.0 - (self.mae / self.max_value1)) * 3, 0)
+            
+            reward1 = np.max(
+                (1.0 - (self.mae / self.max_value1)) * 3, 0
+            )  # force no negative reward values
+            reward2 = np.max(
+                1.0 - (self.mae_sa_score / self.max_value2), 0
+            )  # force no negative reward values
+            reward = np.mean([reward1, reward2])
+        return reward
+
+    def __repr__(self):
+        if self.moves:
+            if self.e_at is None:
+                _ = self.reward()
+            if self.e_at is None:
+                e_at = mae = np.nan
+            else:
+                e_at, mae = self.e_at, self.mae
+
+            if self.e_at is None:
+                sa_score = mae_sa_score = np.nan
+            else:
+                sa_score, mae_sa_score = self.sa_score, self.mae_sa_score
+            s = (
+                f"E_at: {e_at:.4f}; SA score: {sa_score:.4f};" +
+                f"E_at MAE: {mae:.4f}; SA MAE: {mae_sa_score:.4f}; state: "
+                + self.smiles.replace("\n", ".")
+                + "; "
+                + f"Moves: {self.moves}"
+            )
+        else:
+            s = "empty state"
         return s
